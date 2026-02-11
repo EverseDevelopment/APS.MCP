@@ -2,7 +2,7 @@
   "manifest_version": "0.3",
   "name": "aps-mcp",
   "display_name": "Autodesk Platform Services (APS) MCP",
-  "version": "0.1.0",
+  "version": "0.3.0",
   "description": "MCP server for Autodesk Platform Services: get tokens, list hubs, and call APS APIs.",
   "author": {
     "name": "Pablo Derendinger",
@@ -25,11 +25,39 @@
   "tools": [
     {
       "name": "aps_get_token",
-      "description": "Get a 2-legged access token for Autodesk Platform Services. Use to verify credentials or before calling other APS APIs."
+      "description": "Verify APS credentials and obtain a 2-legged access token."
+    },
+    {
+      "name": "aps_dm_request",
+      "description": "Raw Data Management API call (project/v1, data/v1). Full JSON:API response. Power-user tool."
     },
     {
       "name": "aps_list_hubs",
-      "description": "List hubs (top-level containers) in APS Data Management."
+      "description": "List ACC/BIM 360 hubs (accounts) — compact summary with name, id, region."
+    },
+    {
+      "name": "aps_list_projects",
+      "description": "List projects in a hub — compact summary with name, id, platform."
+    },
+    {
+      "name": "aps_get_top_folders",
+      "description": "Get root folders of a project (Project Files, Plans, etc.)."
+    },
+    {
+      "name": "aps_get_folder_contents",
+      "description": "Summarised folder listing with file types, sizes, version info. ~95% smaller than raw API. Supports extension filtering."
+    },
+    {
+      "name": "aps_get_item_details",
+      "description": "Get summarised metadata for a single file/item: name, size, version, dates."
+    },
+    {
+      "name": "aps_get_folder_tree",
+      "description": "Recursive folder-tree structure with file counts per folder."
+    },
+    {
+      "name": "aps_docs",
+      "description": "APS Data Management quick-reference: ID formats, workflows, API paths, error troubleshooting."
     }
   ],
   "keywords": ["autodesk", "aps", "mcp", "construction", "bim"],

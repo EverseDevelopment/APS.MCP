@@ -1,9 +1,23 @@
 /**
  * Autodesk Platform Services (APS) 2-legged OAuth and API helpers.
+ * Supports all Data Management API endpoints per datamanagement.yaml.
  */
 
 const APS_TOKEN_URL = "https://developer.api.autodesk.com/authentication/v2/token";
-const APS_PROJECT_BASE = "https://developer.api.autodesk.com/project/v1";
+const APS_BASE = "https://developer.api.autodesk.com";
+
+/** Structured error thrown by APS API calls. Carries status code + body for rich error context. */
+export class ApsApiError extends Error {
+  constructor(
+    public readonly statusCode: number,
+    public readonly method: string,
+    public readonly path: string,
+    public readonly responseBody: string,
+  ) {
+    super(`APS API ${method} ${path} failed (${statusCode}): ${responseBody}`);
+    this.name = "ApsApiError";
+  }
+}
 
 export interface ApsTokenResponse {
   access_token: string;
@@ -65,20 +79,85 @@ export async function getApsToken(
   return data.access_token;
 }
 
+export type ApsDmMethod = "GET" | "POST" | "PATCH" | "DELETE";
+
+export interface ApsDmRequestOptions {
+  /** Query parameters (e.g. page[number], filter[type]). */
+  query?: Record<string, string | number | boolean | string[] | undefined>;
+  /** Request body for POST/PATCH (JSON). */
+  body?: unknown;
+  /** Extra headers (e.g. x-user-id, Content-Type). */
+  headers?: Record<string, string>;
+}
+
 /**
- * Call APS Project (Data Management) API with 2-legged auth.
+ * Call any Data Management API endpoint (project/v1 or data/v1).
+ * Path is relative to APS_BASE, e.g. "project/v1/hubs" or "data/v1/projects/b.xxx/folders/urn:.../contents".
+ * Supports GET, POST, PATCH, DELETE per datamanagement.yaml.
  */
-export async function apsProjectGet(
+export async function apsDmRequest(
+  method: ApsDmMethod,
   path: string,
-  token: string
+  token: string,
+  options: ApsDmRequestOptions = {}
 ): Promise<unknown> {
-  const url = path.startsWith("http") ? path : `${APS_PROJECT_BASE}${path}`;
-  const res = await fetch(url, {
-    headers: { Authorization: `Bearer ${token}` },
-  });
+  const isAbsolute = path.startsWith("http");
+  if (isAbsolute) {
+    const target = new URL(path);
+    const allowed = new URL(APS_BASE);
+    if (target.host !== allowed.host) {
+      throw new Error(
+        `Refusing to send APS token to foreign host '${target.host}'. ` +
+        `Only requests to '${allowed.host}' are allowed. Use a relative path instead.`,
+      );
+    }
+  }
+  const normalized = isAbsolute ? path : path.replace(/^\//, "");
+  const url = new URL(isAbsolute ? normalized : `${APS_BASE}/${normalized}`);
+
+  if (options.query) {
+    for (const [k, v] of Object.entries(options.query)) {
+      if (v === undefined) continue;
+      if (Array.isArray(v)) {
+        v.forEach((val) => url.searchParams.append(k, String(val)));
+      } else {
+        url.searchParams.set(k, String(v));
+      }
+    }
+  }
+
+  const headers: Record<string, string> = {
+    Authorization: `Bearer ${token}`,
+    ...options.headers,
+  };
+  if ((method === "POST" || method === "PATCH") && options.body !== undefined) {
+    headers["Content-Type"] = headers["Content-Type"] ?? "application/vnd.api+json";
+  }
+
+  const init: RequestInit = { method, headers };
+  if (options.body !== undefined && (method === "POST" || method === "PATCH")) {
+    init.body = JSON.stringify(options.body);
+  }
+
+  const res = await fetch(url.toString(), init);
   if (!res.ok) {
     const text = await res.text();
-    throw new Error(`APS API failed (${res.status}): ${text}`);
+    throw new ApsApiError(res.status, method, url.pathname, text);
   }
-  return res.json();
+  if (res.status === 204) {
+    return { ok: true, status: 204 };
+  }
+  const text = await res.text();
+  if (!text) {
+    return { ok: true, status: res.status };
+  }
+  const ct = (res.headers.get("content-type") ?? "").toLowerCase();
+  if (ct.includes("json")) {
+    try {
+      return JSON.parse(text);
+    } catch {
+      // fall through to return body as text
+    }
+  }
+  return { ok: true, status: res.status, body: text };
 }

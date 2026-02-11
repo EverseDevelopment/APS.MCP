@@ -24,7 +24,7 @@ fs.copyFileSync(path.join(root, "manifest.json"), path.join(buildDir, "manifest.
 
 // Copy server entry (dist -> server/)
 const distDir = path.join(root, "dist");
-for (const name of ["index.js", "aps-auth.js"]) {
+for (const name of ["index.js", "aps-auth.js", "aps-helpers.js"]) {
   const src = path.join(distDir, name);
   if (!fs.existsSync(src)) throw new Error(`Build first: missing ${src}`);
   fs.copyFileSync(src, path.join(buildDir, "server", name));
