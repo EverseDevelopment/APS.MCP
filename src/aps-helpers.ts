@@ -42,6 +42,7 @@ export interface FileEntry {
   last_modified: string;
   created: string;
   hidden: boolean;
+  viewer_url?: string;
 }
 
 export interface FolderContentsSummary {
@@ -63,6 +64,25 @@ export interface FolderTreeNode {
   type: "folder";
   children?: FolderTreeNode[];
   file_count?: number;
+}
+
+// ── Viewer URL builder ───────────────────────────────────────────
+
+/**
+ * Build an ACC viewer URL for a file.
+ * Format: https://acc.autodesk.com/build/files/projects/{id}?folderUrn=…&entityId=…&viewModel=detail&moduleId=folders
+ * @param projectId – project ID with 'b.' prefix (will be stripped)
+ * @param folderId  – folder URN
+ * @param itemId    – item (lineage) URN
+ */
+export function buildViewerUrl(projectId: string, folderId: string, itemId: string): string {
+  const projectGuid = projectId.replace(/^b\./, "");
+  const folderUrn = encodeURIComponent(folderId);
+  const entityId = encodeURIComponent(itemId);
+  return (
+    `https://acc.autodesk.com/build/files/projects/${projectGuid}` +
+    `?folderUrn=${folderUrn}&entityId=${entityId}&viewModel=detail&moduleId=folders`
+  );
 }
 
 // ── Response summarisers ─────────────────────────────────────────
@@ -139,6 +159,8 @@ export function summarizeFolderContents(
   options?: {
     filterExtensions?: string[];
     excludeHidden?: boolean;
+    projectId?: string;
+    folderId?: string;
   },
 ): FolderContentsSummary {
   const r = raw as Record<string, unknown> | undefined;
@@ -190,9 +212,10 @@ export function summarizeFolderContents(
       const vAttrs = tipVersionId ? versionMap.get(tipVersionId) : undefined;
       const sizeBytes = vAttrs?.storageSize as number | undefined;
 
+      const fileItemId = item.id as string;
       files.push({
         name,
-        item_id: item.id as string,
+        item_id: fileItemId,
         version_id: tipVersionId,
         type: ext,
         size_bytes: sizeBytes,
@@ -201,6 +224,10 @@ export function summarizeFolderContents(
         last_modified: (attrs?.lastModifiedTime as string) ?? "",
         created: (attrs?.createTime as string) ?? "",
         hidden,
+        viewer_url:
+          options?.projectId && options?.folderId
+            ? buildViewerUrl(options.projectId, options.folderId, fileItemId)
+            : undefined,
       });
     }
   }
@@ -233,7 +260,10 @@ export function summarizeFolderContents(
 }
 
 /** Summarise a single item (file) response, merging tip‑version metadata. */
-export function summarizeItem(raw: unknown): Record<string, unknown> {
+export function summarizeItem(
+  raw: unknown,
+  options?: { projectId?: string },
+): Record<string, unknown> {
   const r = raw as Record<string, unknown> | undefined;
   const item = r?.data as Record<string, unknown> | undefined;
   if (!item) return { error: "No item data found in response" };
@@ -248,14 +278,23 @@ export function summarizeItem(raw: unknown): Record<string, unknown> {
   );
   const vAttrs = (tipVersion?.attributes as Record<string, unknown>) ?? {};
 
+  // Extract parent folder URN from relationships for viewer URL
+  const parentData = (rels?.parent as Record<string, unknown>)?.data as Record<string, unknown> | undefined;
+  const parentFolderId = parentData?.id as string | undefined;
+
   const name = (attrs?.displayName as string) ?? "(unknown)";
   const ext = name.includes(".") ? name.split(".").pop()!.toLowerCase() : "";
   const sizeBytes = vAttrs.storageSize as number | undefined;
+  const itemId = item.id as string;
 
   return {
     name,
-    item_id: item.id,
+    item_id: itemId,
     type: ext || "unknown",
+    viewer_url:
+      options?.projectId && parentFolderId
+        ? buildViewerUrl(options.projectId, parentFolderId, itemId)
+        : undefined,
     version: {
       id: tipVersionId,
       number: vAttrs.versionNumber,

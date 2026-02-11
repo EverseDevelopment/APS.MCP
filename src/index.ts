@@ -380,6 +380,8 @@ async function handleTool(
     const result = summarizeFolderContents(raw, {
       filterExtensions: filterExts,
       excludeHidden,
+      projectId,
+      folderId,
     });
     // Populate folder id
     result.folder.id = folderId;
@@ -417,7 +419,7 @@ async function handleTool(
       `data/v1/projects/${projectId}/items/${encodeURIComponent(itemId)}`,
       t,
     );
-    return json(summarizeItem(raw));
+    return json(summarizeItem(raw, { projectId }));
   }
 
   // ── aps_get_folder_tree ──────────────────────────────────────
