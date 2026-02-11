@@ -70,9 +70,9 @@ Use the path to `dist/index.js` that matches your machine. You can also run via 
 | Tool | Description |
 |------|-------------|
 | `aps_get_token` | Get a 2-legged APS access token (verifies credentials). |
-| `aps_list_hubs` | List hubs from APS Data Management API. |
+| `aps_dm_request` | Call **any** Data Management API endpoint from the [APS Data Management spec](https://github.com/autodesk-platform-services/aps-sdk-openapi/blob/main/datamanagement/datamanagement.yaml): `project/v1` (hubs, projects, topFolders) and `data/v1` (folders, contents, items, versions, downloads, jobs, storage, commands). Parameters: `method` (GET, POST, PATCH, DELETE), `path` (e.g. `project/v1/hubs` or `data/v1/projects/b.xxx/folders/urn:.../contents`), optional `query` and `body`. |
 
-More tools (e.g. projects, folders, items, model derivative) can be added in `src/index.ts` and `src/aps-auth.ts`.
+For write/create operations (e.g. create folder, create item, execute command) set `APS_SCOPE` to include `data:write` or `data:create` as required by the endpoint.
 
 ## MCP Bundle (.mcpb)
 

@@ -28,8 +28,8 @@
       "description": "Get a 2-legged access token for Autodesk Platform Services. Use to verify credentials or before calling other APS APIs."
     },
     {
-      "name": "aps_list_hubs",
-      "description": "List hubs (top-level containers) in APS Data Management."
+      "name": "aps_dm_request",
+      "description": "Call any Data Management API endpoint (project/v1 and data/v1): hubs, projects, topFolders, folders, contents, items, versions, downloads, jobs, storage, commands. Params: method (GET/POST/PATCH/DELETE), path, optional query and body."
     }
   ],
   "keywords": ["autodesk", "aps", "mcp", "construction", "bim"],

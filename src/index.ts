@@ -9,7 +9,7 @@ import {
   ListToolsRequestSchema,
   CallToolRequestSchema,
 } from "@modelcontextprotocol/sdk/types.js";
-import { getApsToken, apsProjectGet } from "./aps-auth.js";
+import { getApsToken, apsDmRequest } from "./aps-auth.js";
 
 const APS_CLIENT_ID = process.env.APS_CLIENT_ID ?? "";
 const APS_CLIENT_SECRET = process.env.APS_CLIENT_SECRET ?? "";
@@ -49,12 +49,32 @@ async function main() {
         },
       },
       {
-        name: "aps_list_hubs",
+        name: "aps_dm_request",
         description:
-          "List hubs (top-level containers) in APS Data Management. Requires APS_CLIENT_ID and APS_CLIENT_SECRET to be set.",
+          "Call any Data Management API endpoint from the APS Data Management spec (project/v1 and data/v1). Path is relative to developer.api.autodesk.com (e.g. project/v1/hubs, data/v1/projects/{projectId}/folders/{folderId}/contents). Use for hubs, projects, topFolders, folders, folder contents, items, versions, downloads, jobs, storage, commands, etc.",
         inputSchema: {
           type: "object" as const,
-          properties: {},
+          properties: {
+            method: {
+              type: "string",
+              enum: ["GET", "POST", "PATCH", "DELETE"],
+              description: "HTTP method",
+            },
+            path: {
+              type: "string",
+              description: "API path relative to developer.api.autodesk.com (e.g. project/v1/hubs or data/v1/projects/b.xxx/folders/urn:adsk.../contents)",
+            },
+            query: {
+              type: "object",
+              description: "Optional query parameters (e.g. page[number], page[limit], filter[type]). Keys and string values only.",
+              additionalProperties: { type: "string" },
+            },
+            body: {
+              type: "object",
+              description: "Optional JSON body for POST or PATCH (e.g. for create folder, create item, execute command).",
+            },
+          },
+          required: ["method", "path"],
         },
       },
     ],
@@ -82,14 +102,29 @@ async function main() {
         };
       }
 
-      if (name === "aps_list_hubs") {
+      if (name === "aps_dm_request") {
         requireApsEnv();
+        const method = (safeArgs.method as string) ?? "GET";
+        const path = safeArgs.path as string;
+        const query = safeArgs.query as Record<string, string> | undefined;
+        const body = safeArgs.body as Record<string, unknown> | undefined;
+        if (!path || typeof path !== "string") {
+          return {
+            content: [{ type: "text" as const, text: "Error: path is required" }],
+            isError: true,
+          };
+        }
         const token = await getApsToken(
           APS_CLIENT_ID,
           APS_CLIENT_SECRET,
           APS_SCOPE || undefined
         );
-        const data = await apsProjectGet("/hubs", token);
+        const data = await apsDmRequest(
+          method as "GET" | "POST" | "PATCH" | "DELETE",
+          path,
+          token,
+          { query, body }
+        );
         return {
           content: [
             {
