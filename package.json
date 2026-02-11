@@ -1,0 +1,27 @@
+{
+  "name": "acc-mcp",
+  "version": "0.1.0",
+  "description": "MCP service for Autodesk Platform Services (APS)",
+  "type": "module",
+  "main": "dist/index.js",
+  "bin": {
+    "acc-mcp": "dist/index.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "dev": "tsc && node dist/index.js",
+    "pack": "npm run build && node scripts/pack-mcpb.mjs"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.0.0",
+    "zod": "^3.23.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "typescript": "^5.0.0"
+  }
+}

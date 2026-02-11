@@ -1,0 +1,66 @@
+{
+  "manifest_version": "0.3",
+  "name": "aps-mcp",
+  "display_name": "Autodesk Platform Services (APS) MCP",
+  "version": "0.1.0",
+  "description": "MCP server for Autodesk Platform Services: get tokens, list hubs, and call APS APIs.",
+  "author": {
+    "name": "Pablo Derendinger",
+    "email": "pderendinger@e-verse.com",
+    "url": "https://www.e-verse.com"
+  },
+  "server": {
+    "type": "node",
+    "entry_point": "server/index.js",
+    "mcp_config": {
+      "command": "node",
+      "args": ["${__dirname}/server/index.js"],
+      "env": {
+        "APS_CLIENT_ID": "${user_config.aps_client_id}",
+        "APS_CLIENT_SECRET": "${user_config.aps_client_secret}",
+        "APS_SCOPE": "${user_config.aps_scope}"
+      }
+    }
+  },
+  "tools": [
+    {
+      "name": "aps_get_token",
+      "description": "Get a 2-legged access token for Autodesk Platform Services. Use to verify credentials or before calling other APS APIs."
+    },
+    {
+      "name": "aps_list_hubs",
+      "description": "List hubs (top-level containers) in APS Data Management."
+    }
+  ],
+  "keywords": ["autodesk", "aps", "mcp", "construction", "bim"],
+  "license": "MIT",
+  "compatibility": {
+    "platforms": ["darwin", "win32", "linux"],
+    "runtimes": {
+      "node": ">=18.0.0"
+    }
+  },
+  "user_config": {
+    "aps_client_id": {
+      "type": "string",
+      "title": "APS Client ID",
+      "description": "Your Autodesk Platform Services app Client ID (from aps.autodesk.com)",
+      "sensitive": false,
+      "required": true
+    },
+    "aps_client_secret": {
+      "type": "string",
+      "title": "APS Client Secret",
+      "description": "Your APS app Client Secret",
+      "sensitive": true,
+      "required": true
+    },
+    "aps_scope": {
+      "type": "string",
+      "title": "APS OAuth scope(s)",
+      "description": "Space-separated scopes (e.g. data:read or data:read data:write). Default: data:read",
+      "default": "data:read",
+      "required": false
+    }
+  }
+}
