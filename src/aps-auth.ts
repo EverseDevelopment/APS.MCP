@@ -101,8 +101,19 @@ export async function apsDmRequest(
   token: string,
   options: ApsDmRequestOptions = {}
 ): Promise<unknown> {
-  const normalized = path.startsWith("http") ? path : path.replace(/^\//, "");
-  const url = new URL(normalized.startsWith("http") ? normalized : `${APS_BASE}/${normalized}`);
+  const isAbsolute = path.startsWith("http");
+  if (isAbsolute) {
+    const target = new URL(path);
+    const allowed = new URL(APS_BASE);
+    if (target.host !== allowed.host) {
+      throw new Error(
+        `Refusing to send APS token to foreign host '${target.host}'. ` +
+        `Only requests to '${allowed.host}' are allowed. Use a relative path instead.`,
+      );
+    }
+  }
+  const normalized = isAbsolute ? path : path.replace(/^\//, "");
+  const url = new URL(isAbsolute ? normalized : `${APS_BASE}/${normalized}`);
 
   if (options.query) {
     for (const [k, v] of Object.entries(options.query)) {

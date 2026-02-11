@@ -90,7 +90,7 @@ These return compact, pre-processed summaries (~95 % smaller than raw API respon
 
 ### Typical workflow
 
-```
+```text
 aps_list_hubs                                    → pick a hub
 aps_list_projects(hub_id)                        → pick a project
 aps_get_top_folders(hub_id, project_id)          → see root folders
