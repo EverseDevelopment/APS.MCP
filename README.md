@@ -67,12 +67,38 @@ Use the path to `dist/index.js` that matches your machine. You can also run via 
 
 ## Tools
 
+### Simplified tools (recommended)
+
+These return compact, pre-processed summaries (~95 % smaller than raw API responses) and include parameter validation with helpful error messages.
+
 | Tool | Description |
 |------|-------------|
-| `aps_get_token` | Get a 2-legged APS access token (verifies credentials). |
-| `aps_dm_request` | Call **any** Data Management API endpoint from the [APS Data Management spec](https://github.com/autodesk-platform-services/aps-sdk-openapi/blob/main/datamanagement/datamanagement.yaml): `project/v1` (hubs, projects, topFolders) and `data/v1` (folders, contents, items, versions, downloads, jobs, storage, commands). Parameters: `method` (GET, POST, PATCH, DELETE), `path` (e.g. `project/v1/hubs` or `data/v1/projects/b.xxx/folders/urn:.../contents`), optional `query` and `body`. |
+| `aps_list_hubs` | List all ACC / BIM 360 hubs (accounts) — returns name, id, type, region. |
+| `aps_list_projects` | List projects in a hub — returns name, id, platform, last modified. |
+| `aps_get_top_folders` | Get root folders for a project (Project Files, Plans, Shared, …). |
+| `aps_get_folder_contents` | Summarised folder listing with file-type breakdown, sizes, version info. Supports filtering by extension and hiding hidden items. |
+| `aps_get_item_details` | Metadata for a single file: name, type, size, version number, dates. |
+| `aps_get_folder_tree` | Recursive folder-tree with file counts per folder (configurable depth). |
+| `aps_docs` | APS quick-reference: common ID formats, browsing workflow, API paths, file extensions, error troubleshooting. |
 
-For write/create operations (e.g. create folder, create item, execute command) set `APS_SCOPE` to include `data:write` or `data:create` as required by the endpoint.
+### Power-user tools
+
+| Tool | Description |
+|------|-------------|
+| `aps_get_token` | Verify credentials / obtain a 2-legged access token. All other tools handle tokens automatically. |
+| `aps_dm_request` | Call **any** Data Management API endpoint from the [APS Data Management spec](https://github.com/autodesk-platform-services/aps-sdk-openapi/blob/main/datamanagement/datamanagement.yaml): `project/v1` (hubs, projects, topFolders) and `data/v1` (folders, contents, items, versions, downloads, jobs, storage, commands). Returns the full JSON:API response. Parameters: `method` (GET, POST, PATCH, DELETE), `path`, optional `query` and `body`. |
+
+### Typical workflow
+
+```
+aps_list_hubs                                    → pick a hub
+aps_list_projects(hub_id)                        → pick a project
+aps_get_top_folders(hub_id, project_id)          → see root folders
+aps_get_folder_contents(project_id, folder_id)   → browse files
+aps_get_item_details(project_id, item_id)        → file metadata
+```
+
+For write/create operations (e.g. create folder, create item, execute command) use `aps_dm_request` and set `APS_SCOPE` to include `data:write` or `data:create` as required by the endpoint.
 
 ## MCP Bundle (.mcpb)
 

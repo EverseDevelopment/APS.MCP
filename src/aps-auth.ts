@@ -6,6 +6,19 @@
 const APS_TOKEN_URL = "https://developer.api.autodesk.com/authentication/v2/token";
 const APS_BASE = "https://developer.api.autodesk.com";
 
+/** Structured error thrown by APS API calls. Carries status code + body for rich error context. */
+export class ApsApiError extends Error {
+  constructor(
+    public readonly statusCode: number,
+    public readonly method: string,
+    public readonly path: string,
+    public readonly responseBody: string,
+  ) {
+    super(`APS API ${method} ${path} failed (${statusCode}): ${responseBody}`);
+    this.name = "ApsApiError";
+  }
+}
+
 export interface ApsTokenResponse {
   access_token: string;
   expires_in: number;
@@ -118,11 +131,22 @@ export async function apsDmRequest(
   const res = await fetch(url.toString(), init);
   if (!res.ok) {
     const text = await res.text();
-    throw new Error(`APS API ${method} ${url.pathname} failed (${res.status}): ${text}`);
+    throw new ApsApiError(res.status, method, url.pathname, text);
   }
-  const ct = res.headers.get("content-type") ?? "";
-  if (ct.includes("application/json") && res.status !== 204) {
-    return res.json();
+  if (res.status === 204) {
+    return { ok: true, status: 204 };
   }
-  return { ok: true, status: res.status };
+  const text = await res.text();
+  if (!text) {
+    return { ok: true, status: res.status };
+  }
+  const ct = (res.headers.get("content-type") ?? "").toLowerCase();
+  if (ct.includes("json")) {
+    try {
+      return JSON.parse(text);
+    } catch {
+      // fall through to return body as text
+    }
+  }
+  return { ok: true, status: res.status, body: text };
 }
