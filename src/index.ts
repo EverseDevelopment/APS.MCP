@@ -1,7 +1,7 @@
 /**
  * MCP server for Autodesk Platform Services (APS).
  *
- * Tools:
+ * Data Management Tools:
  *   aps_get_token          – verify credentials / obtain 2‑legged token
  *   aps_dm_request         – raw Data Management API (power‑user)
  *   aps_list_hubs          – simplified hub listing
@@ -11,6 +11,15 @@
  *   aps_get_item_details   – single file / item metadata
  *   aps_get_folder_tree    – recursive folder tree
  *   aps_docs               – APS quick‑reference documentation
+ *
+ * Submittals Tools:
+ *   aps_submittals_request          – raw Submittals API (power‑user)
+ *   aps_list_submittal_items        – list submittal items
+ *   aps_get_submittal_item          – single submittal item details
+ *   aps_list_submittal_packages     – list submittal packages
+ *   aps_list_submittal_specs        – list spec sections
+ *   aps_get_submittal_item_attachments – attachments for a submittal item
+ *   aps_submittals_docs             – Submittals quick‑reference documentation
  */
 
 import { Server } from "@modelcontextprotocol/sdk/server";
@@ -34,6 +43,16 @@ import {
   validateFolderId,
   validateItemId,
   APS_DOCS,
+  // ── Submittals ──
+  summarizeSubmittalItems,
+  summarizeSubmittalPackages,
+  summarizeSubmittalSpecs,
+  summarizeSubmittalAttachments,
+  submittalPath,
+  validateSubmittalProjectId,
+  validateSubmittalItemId,
+  validateSubmittalPath,
+  SUBMITTALS_DOCS,
 } from "./aps-helpers.js";
 
 // ── Environment ──────────────────────────────────────────────────
@@ -284,6 +303,205 @@ const TOOLS = [
       "Call this before your first APS interaction or when unsure about ID formats or API paths.",
     inputSchema: { type: "object" as const, properties: {} },
   },
+
+  // ═══════════════════════════════════════════════════════════════
+  // ── ACC Submittals tools ───────────────────────────────────────
+  // ═══════════════════════════════════════════════════════════════
+
+  // 10 ── aps_submittals_request (raw / power‑user)
+  {
+    name: "aps_submittals_request",
+    description:
+      "Call any ACC Submittals API endpoint. " +
+      "This is the raw / power‑user tool – it returns the full JSON response. " +
+      "Prefer the simplified tools (aps_list_submittal_items, aps_list_submittal_packages, etc.) for everyday use. " +
+      "Use this tool when you need full control: pagination, POST/PATCH, or endpoints not covered by simplified tools " +
+      "(e.g. metadata, settings/mappings, users/me, item-types, responses).\n\n" +
+      "The base path is: construction/submittals/v2/projects/{projectId}/\n" +
+      "You only need to provide the sub‑path after 'projects/{projectId}/' (e.g. 'items', 'packages', 'specs').",
+    inputSchema: {
+      type: "object" as const,
+      properties: {
+        project_id: {
+          type: "string",
+          description:
+            "Project ID – UUID format (e.g. 'abc12345-6789-…'). " +
+            "If you have a DM project ID with 'b.' prefix, it will be stripped automatically.",
+        },
+        method: {
+          type: "string",
+          enum: ["GET", "POST"],
+          description: "HTTP method. Default: GET.",
+        },
+        path: {
+          type: "string",
+          description:
+            "Sub‑path relative to 'projects/{projectId}/' " +
+            "(e.g. 'items', 'packages', 'specs', 'items/{itemId}', 'metadata', 'responses', 'item-types').",
+        },
+        query: {
+          type: "object",
+          description:
+            "Optional query parameters as key/value pairs (e.g. { \"limit\": \"50\", \"offset\": \"0\", \"filter[statusId]\": \"2\" }).",
+          additionalProperties: { type: "string" },
+        },
+        body: {
+          type: "object",
+          description: "Optional JSON body for POST requests.",
+        },
+      },
+      required: ["project_id", "path"],
+    },
+  },
+
+  // 11 ── aps_list_submittal_items
+  {
+    name: "aps_list_submittal_items",
+    description:
+      "List submittal items in an ACC project. " +
+      "Returns a compact summary: title, number, spec section, type, status, priority, revision, dates. " +
+      "Supports filtering by status, package, spec section, and review response.",
+    inputSchema: {
+      type: "object" as const,
+      properties: {
+        project_id: {
+          type: "string",
+          description: "Project ID (UUID or 'b.' prefixed – auto‑converted).",
+        },
+        filter_status: {
+          type: "string",
+          description:
+            "Filter by status ID: 1=Required, 2=Open, 3=Closed, 4=Void, 5=Empty, 6=Draft. " +
+            "Omit to return all statuses.",
+        },
+        filter_package_id: {
+          type: "string",
+          description: "Filter by package UUID. Omit to return items from all packages.",
+        },
+        filter_spec_id: {
+          type: "string",
+          description: "Filter by spec section UUID. Omit to return all spec sections.",
+        },
+        limit: {
+          type: "number",
+          description: "Max items per page (1–200). Default 20.",
+        },
+        offset: {
+          type: "number",
+          description: "Pagination offset. Default 0.",
+        },
+      },
+      required: ["project_id"],
+    },
+  },
+
+  // 12 ── aps_get_submittal_item
+  {
+    name: "aps_get_submittal_item",
+    description:
+      "Get full details for a single submittal item by ID. " +
+      "Returns the complete item object from the API.",
+    inputSchema: {
+      type: "object" as const,
+      properties: {
+        project_id: {
+          type: "string",
+          description: "Project ID (UUID or 'b.' prefixed – auto‑converted).",
+        },
+        item_id: {
+          type: "string",
+          description: "Submittal item UUID.",
+        },
+      },
+      required: ["project_id", "item_id"],
+    },
+  },
+
+  // 13 ── aps_list_submittal_packages
+  {
+    name: "aps_list_submittal_packages",
+    description:
+      "List submittal packages in an ACC project. " +
+      "Returns a compact summary: title, identifier, spec section, description, dates.",
+    inputSchema: {
+      type: "object" as const,
+      properties: {
+        project_id: {
+          type: "string",
+          description: "Project ID (UUID or 'b.' prefixed – auto‑converted).",
+        },
+        limit: {
+          type: "number",
+          description: "Max items per page (1–200). Default 20.",
+        },
+        offset: {
+          type: "number",
+          description: "Pagination offset. Default 0.",
+        },
+      },
+      required: ["project_id"],
+    },
+  },
+
+  // 14 ── aps_list_submittal_specs
+  {
+    name: "aps_list_submittal_specs",
+    description:
+      "List spec sections for submittals in an ACC project. " +
+      "Returns a compact summary: identifier (e.g. '033100'), title, dates. " +
+      "Spec sections are the specification divisions that submittal items are organised under.",
+    inputSchema: {
+      type: "object" as const,
+      properties: {
+        project_id: {
+          type: "string",
+          description: "Project ID (UUID or 'b.' prefixed – auto‑converted).",
+        },
+        limit: {
+          type: "number",
+          description: "Max items per page (1–200). Default 20.",
+        },
+        offset: {
+          type: "number",
+          description: "Pagination offset. Default 0.",
+        },
+      },
+      required: ["project_id"],
+    },
+  },
+
+  // 15 ── aps_get_submittal_item_attachments
+  {
+    name: "aps_get_submittal_item_attachments",
+    description:
+      "Get attachments for a specific submittal item. " +
+      "Returns file names, URNs, revision numbers, and categories. " +
+      "Use the URN to download the attachment via the Data Management API.",
+    inputSchema: {
+      type: "object" as const,
+      properties: {
+        project_id: {
+          type: "string",
+          description: "Project ID (UUID or 'b.' prefixed – auto‑converted).",
+        },
+        item_id: {
+          type: "string",
+          description: "Submittal item UUID.",
+        },
+      },
+      required: ["project_id", "item_id"],
+    },
+  },
+
+  // 16 ── aps_submittals_docs
+  {
+    name: "aps_submittals_docs",
+    description:
+      "Return ACC Submittals API quick‑reference documentation: " +
+      "endpoints, query parameters, statuses, custom numbering, typical workflow, and key concepts. " +
+      "Call this before your first Submittals interaction or when unsure about Submittals API usage.",
+    inputSchema: { type: "object" as const, properties: {} },
+  },
 ];
 
 // ── Tool handlers ────────────────────────────────────────────────
@@ -440,6 +658,133 @@ async function handleTool(
   // ── aps_docs ─────────────────────────────────────────────────
   if (name === "aps_docs") {
     return ok(APS_DOCS);
+  }
+
+  // ═══════════════════════════════════════════════════════════════
+  // ── ACC Submittals handlers ────────────────────────────────────
+  // ═══════════════════════════════════════════════════════════════
+
+  // ── aps_submittals_request ──────────────────────────────────
+  if (name === "aps_submittals_request") {
+    const projectId = args.project_id as string;
+    const e1 = validateSubmittalProjectId(projectId);
+    if (e1) return fail(e1);
+    const subPath = args.path as string;
+    const pathErr = validateSubmittalPath(subPath);
+    if (pathErr) return fail(pathErr);
+
+    const method = (args.method as string) ?? "GET";
+    const query = args.query as Record<string, string> | undefined;
+    const body = args.body as Record<string, unknown> | undefined;
+    const t = await token();
+    const fullPath = submittalPath(projectId, subPath);
+    const data = await apsDmRequest(
+      method as "GET" | "POST" | "PATCH" | "DELETE",
+      fullPath,
+      t,
+      { query, body, headers: { "Content-Type": "application/json" } },
+    );
+    return json(data);
+  }
+
+  // ── aps_list_submittal_items ────────────────────────────────
+  if (name === "aps_list_submittal_items") {
+    const projectId = args.project_id as string;
+    const e1 = validateSubmittalProjectId(projectId);
+    if (e1) return fail(e1);
+
+    const query: Record<string, string> = {};
+    const limit = Math.min(Math.max(Number(args.limit) || 20, 1), 200);
+    query.limit = String(limit);
+    if (args.offset != null) query.offset = String(args.offset);
+    if (args.filter_status) query["filter[statusId]"] = args.filter_status as string;
+    if (args.filter_package_id) query["filter[packageId]"] = args.filter_package_id as string;
+    if (args.filter_spec_id) query["filter[specId]"] = args.filter_spec_id as string;
+
+    const t = await token();
+    const raw = await apsDmRequest("GET", submittalPath(projectId, "items"), t, {
+      query,
+      headers: { "Content-Type": "application/json" },
+    });
+    return json(summarizeSubmittalItems(raw));
+  }
+
+  // ── aps_get_submittal_item ──────────────────────────────────
+  if (name === "aps_get_submittal_item") {
+    const projectId = args.project_id as string;
+    const itemId = args.item_id as string;
+    const e1 = validateSubmittalProjectId(projectId);
+    if (e1) return fail(e1);
+    const e2 = validateSubmittalItemId(itemId);
+    if (e2) return fail(e2);
+
+    const t = await token();
+    const raw = await apsDmRequest("GET", submittalPath(projectId, `items/${itemId}`), t, {
+      headers: { "Content-Type": "application/json" },
+    });
+    return json(raw);
+  }
+
+  // ── aps_list_submittal_packages ─────────────────────────────
+  if (name === "aps_list_submittal_packages") {
+    const projectId = args.project_id as string;
+    const e1 = validateSubmittalProjectId(projectId);
+    if (e1) return fail(e1);
+
+    const query: Record<string, string> = {};
+    const limit = Math.min(Math.max(Number(args.limit) || 20, 1), 200);
+    query.limit = String(limit);
+    if (args.offset != null) query.offset = String(args.offset);
+
+    const t = await token();
+    const raw = await apsDmRequest("GET", submittalPath(projectId, "packages"), t, {
+      query,
+      headers: { "Content-Type": "application/json" },
+    });
+    return json(summarizeSubmittalPackages(raw));
+  }
+
+  // ── aps_list_submittal_specs ────────────────────────────────
+  if (name === "aps_list_submittal_specs") {
+    const projectId = args.project_id as string;
+    const e1 = validateSubmittalProjectId(projectId);
+    if (e1) return fail(e1);
+
+    const query: Record<string, string> = {};
+    const limit = Math.min(Math.max(Number(args.limit) || 20, 1), 200);
+    query.limit = String(limit);
+    if (args.offset != null) query.offset = String(args.offset);
+
+    const t = await token();
+    const raw = await apsDmRequest("GET", submittalPath(projectId, "specs"), t, {
+      query,
+      headers: { "Content-Type": "application/json" },
+    });
+    return json(summarizeSubmittalSpecs(raw));
+  }
+
+  // ── aps_get_submittal_item_attachments ──────────────────────
+  if (name === "aps_get_submittal_item_attachments") {
+    const projectId = args.project_id as string;
+    const itemId = args.item_id as string;
+    const e1 = validateSubmittalProjectId(projectId);
+    if (e1) return fail(e1);
+    const e2 = validateSubmittalItemId(itemId);
+    if (e2) return fail(e2);
+
+    const t = await token();
+    const raw = await apsDmRequest(
+      "GET",
+      submittalPath(projectId, `items/${itemId}/attachments`),
+      t,
+      { headers: { "Content-Type": "application/json" } },
+    );
+    return json(summarizeSubmittalAttachments(raw));
+  }
+
+  // ── aps_submittals_docs ─────────────────────────────────────
+  if (name === "aps_submittals_docs") {
+    return ok(SUBMITTALS_DOCS);
   }
 
   return fail(`Unknown tool: ${name}`);
