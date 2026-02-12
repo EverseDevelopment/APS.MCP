@@ -58,6 +58,42 @@
     {
       "name": "aps_docs",
       "description": "APS Data Management quick-reference: ID formats, workflows, API paths, error troubleshooting."
+    },
+    {
+      "name": "aps_issues_request",
+      "description": "Raw ACC Issues API call (construction/issues/v1). Full JSON response. Power-user tool."
+    },
+    {
+      "name": "aps_issues_get_types",
+      "description": "Get issue categories and types (subtypes) for a project — compact summary with id, title, code."
+    },
+    {
+      "name": "aps_issues_list",
+      "description": "List/search issues with filtering by status, assignee, type, date, text. Compact summary per issue."
+    },
+    {
+      "name": "aps_issues_get",
+      "description": "Get detailed info for a single issue: title, status, assignee, dates, custom attributes, comments count."
+    },
+    {
+      "name": "aps_issues_create",
+      "description": "Create a new issue. Requires title, issueSubtypeId, status. Supports all optional fields."
+    },
+    {
+      "name": "aps_issues_update",
+      "description": "Update an existing issue. Only send the fields you want to change."
+    },
+    {
+      "name": "aps_issues_get_comments",
+      "description": "Get all comments for an issue — compact list with body, author, date."
+    },
+    {
+      "name": "aps_issues_create_comment",
+      "description": "Add a comment to an issue."
+    },
+    {
+      "name": "aps_issues_docs",
+      "description": "ACC Issues API quick-reference: project ID format, statuses, workflows, filters, error troubleshooting."
     }
   ],
   "keywords": ["autodesk", "aps", "mcp", "construction", "bim"],
