@@ -60,6 +60,34 @@
     {
       "name": "aps_docs",
       "description": "APS Data Management quick-reference: ID formats, workflows, API paths, error troubleshooting."
+    },
+    {
+      "name": "aps_submittals_request",
+      "description": "Raw ACC Submittals API call. Full JSON response. Power-user tool for any submittals endpoint."
+    },
+    {
+      "name": "aps_list_submittal_items",
+      "description": "List submittal items — compact summary with title, number, status, priority, revision. Supports filtering."
+    },
+    {
+      "name": "aps_get_submittal_item",
+      "description": "Get full details for a single submittal item by ID."
+    },
+    {
+      "name": "aps_list_submittal_packages",
+      "description": "List submittal packages — compact summary with title, identifier, spec section."
+    },
+    {
+      "name": "aps_list_submittal_specs",
+      "description": "List spec sections for submittals — identifier (e.g. 033100), title, dates."
+    },
+    {
+      "name": "aps_get_submittal_item_attachments",
+      "description": "Get attachments for a submittal item — file names, URNs, revision numbers."
+    },
+    {
+      "name": "aps_submittals_docs",
+      "description": "ACC Submittals API quick-reference: endpoints, statuses, custom numbering, workflow, key concepts."
     }
   ],
   "keywords": [
