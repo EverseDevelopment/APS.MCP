@@ -1,6 +1,6 @@
 {
   "name": "acc-mcp",
-  "version": "0.3.0",
+  "version": "1.0.0",
   "description": "MCP service for Autodesk Platform Services (APS)",
   "type": "module",
   "main": "dist/index.js",

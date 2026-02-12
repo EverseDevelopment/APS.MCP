@@ -2,7 +2,7 @@
   "manifest_version": "0.3",
   "name": "aps-mcp",
   "display_name": "Autodesk Platform Services (APS) MCP",
-  "version": "0.3.0",
+  "version": "1.0.0",
   "description": "MCP server for Autodesk Platform Services: get tokens, list hubs, and call APS APIs.",
   "author": {
     "name": "Pablo Derendinger",
@@ -14,7 +14,9 @@
     "entry_point": "server/index.js",
     "mcp_config": {
       "command": "node",
-      "args": ["${__dirname}/server/index.js"],
+      "args": [
+        "${__dirname}/server/index.js"
+      ],
       "env": {
         "APS_CLIENT_ID": "${user_config.aps_client_id}",
         "APS_CLIENT_SECRET": "${user_config.aps_client_secret}",
@@ -60,10 +62,20 @@
       "description": "APS Data Management quick-reference: ID formats, workflows, API paths, error troubleshooting."
     }
   ],
-  "keywords": ["autodesk", "aps", "mcp", "construction", "bim"],
+  "keywords": [
+    "autodesk",
+    "aps",
+    "mcp",
+    "construction",
+    "bim"
+  ],
   "license": "MIT",
   "compatibility": {
-    "platforms": ["darwin", "win32", "linux"],
+    "platforms": [
+      "darwin",
+      "win32",
+      "linux"
+    ],
     "runtimes": {
       "node": ">=18.0.0"
     }
