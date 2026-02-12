@@ -1032,8 +1032,14 @@ async function handleTool(
       status,
     };
     if (args.description != null) body.description = args.description;
-    if (args.assigned_to != null) body.assignedTo = args.assigned_to;
-    if (args.assigned_to_type != null) body.assignedToType = args.assigned_to_type;
+    if (args.assigned_to && !args.assigned_to_type)
+      return fail("assigned_to_type is required when assigned_to is provided.");
+    if (args.assigned_to != null && args.assigned_to_type != null) {
+      body.assignedTo = args.assigned_to;
+      body.assignedToType = args.assigned_to_type;
+    } else if (args.assigned_to_type != null) {
+      body.assignedToType = args.assigned_to_type;
+    }
     if (args.due_date != null) body.dueDate = args.due_date;
     if (args.start_date != null) body.startDate = args.start_date;
     if (args.location_id != null) body.locationId = args.location_id;
@@ -1069,8 +1075,14 @@ async function handleTool(
     if (args.title != null) body.title = args.title;
     if (args.description != null) body.description = args.description;
     if (args.status != null) body.status = args.status;
-    if (args.assigned_to != null) body.assignedTo = args.assigned_to;
-    if (args.assigned_to_type != null) body.assignedToType = args.assigned_to_type;
+    if (args.assigned_to && !args.assigned_to_type)
+      return fail("assigned_to_type is required when assigned_to is provided.");
+    if (args.assigned_to != null && args.assigned_to_type != null) {
+      body.assignedTo = args.assigned_to;
+      body.assignedToType = args.assigned_to_type;
+    } else if (args.assigned_to_type != null) {
+      body.assignedToType = args.assigned_to_type;
+    }
     if (args.due_date != null) body.dueDate = args.due_date;
     if (args.start_date != null) body.startDate = args.start_date;
     if (args.location_id != null) body.locationId = args.location_id;
