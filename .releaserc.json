@@ -1,0 +1,20 @@
+{
+  "branches": ["main"],
+  "plugins": [
+    "@semantic-release/commit-analyzer",
+    "@semantic-release/release-notes-generator",
+    ["@semantic-release/npm", { "npmPublish": false }],
+    ["@semantic-release/exec", {
+      "prepareCmd": "node scripts/update-manifest-version.mjs ${nextRelease.version} && npm run pack"
+    }],
+    ["@semantic-release/git", {
+      "assets": ["package.json", "package-lock.json", "manifest.json"],
+      "message": "chore(release): ${nextRelease.version} [skip ci]"
+    }],
+    ["@semantic-release/github", {
+      "assets": [
+        { "path": "acc-mcp.mcpb", "label": "acc-mcp-v${nextRelease.version}.mcpb" }
+      ]
+    }]
+  ]
+}
