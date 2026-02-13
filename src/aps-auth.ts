@@ -19,7 +19,7 @@ function escapeHtml(s: string): string {
 
 import { createServer } from "node:http";
 import type { IncomingMessage, ServerResponse } from "node:http";
-import { exec } from "node:child_process";
+import { spawn } from "node:child_process";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import {
@@ -227,13 +227,23 @@ function deleteCacheFile(): void {
 
 /** Open a URL in the user's default browser (cross‑platform). */
 function openBrowser(url: string): void {
-  const cmd =
-    process.platform === "win32"
-      ? `start "" "${url}"`
-      : process.platform === "darwin"
-        ? `open "${url}"`
-        : `xdg-open "${url}"`;
-  exec(cmd);
+  let program: string;
+  let args: string[];
+
+  if (process.platform === "win32") {
+    program = "cmd";
+    args = ["/c", "start", "", url];
+  } else if (process.platform === "darwin") {
+    program = "open";
+    args = [url];
+  } else {
+    program = "xdg-open";
+    args = [url];
+  }
+
+  const child = spawn(program, args, { stdio: "ignore" });
+  child.on("error", () => { /* ignore – best‑effort */ });
+  child.unref();
 }
 
 /** In‑memory cache so we don't re‑read the file every call. */
