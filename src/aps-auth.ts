@@ -311,13 +311,14 @@ export async function performAps3loLogin(
 
           if (!tokenRes.ok) {
             const text = await tokenRes.text();
+            const safeText = escapeHtml(text);
             res.writeHead(500, { "Content-Type": "text/html" });
             res.end(
-              `<html><body><h2>Token exchange failed</h2><pre>${text}</pre></body></html>`,
+              `<html><body><h2>Token exchange failed</h2><pre>${safeText}</pre></body></html>`,
             );
             server.close();
             reject(
-              new Error(`Token exchange failed (${tokenRes.status}): ${text}`),
+              new Error(`Token exchange failed (${tokenRes.status}): ${safeText}`),
             );
             return;
           }
