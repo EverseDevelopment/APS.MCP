@@ -18,11 +18,20 @@
       "env": {
         "APS_CLIENT_ID": "${user_config.aps_client_id}",
         "APS_CLIENT_SECRET": "${user_config.aps_client_secret}",
-        "APS_SCOPE": "${user_config.aps_scope}"
+        "APS_SCOPE": "${user_config.aps_scope}",
+        "APS_CALLBACK_PORT": "${user_config.aps_callback_port}"
       }
     }
   },
   "tools": [
+    {
+      "name": "aps_login",
+      "description": "Start 3-legged OAuth login (opens browser). Gives user-context access to APS."
+    },
+    {
+      "name": "aps_logout",
+      "description": "Clear 3-legged session. Falls back to 2-legged (app) token."
+    },
     {
       "name": "aps_get_token",
       "description": "Verify APS credentials and obtain a 2-legged access token."
@@ -124,6 +133,13 @@
       "title": "APS OAuth scope(s)",
       "description": "Space-separated scopes (e.g. data:read or data:read data:write). Default: data:read",
       "default": "data:read",
+      "required": false
+    },
+    "aps_callback_port": {
+      "type": "string",
+      "title": "3LO callback port",
+      "description": "Localhost port for the 3-legged OAuth callback. Default: 8910",
+      "default": "8910",
       "required": false
     }
   }

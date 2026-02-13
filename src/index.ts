@@ -1,8 +1,12 @@
 /**
  * MCP server for Autodesk Platform Services (APS).
  *
- * Data Management Tools:
+ * Auth Tools:
+ *   aps_login              – 3‑legged OAuth login (opens browser)
+ *   aps_logout             – clear 3‑legged session
  *   aps_get_token          – verify credentials / obtain 2‑legged token
+ *
+ * Data Management Tools:
  *   aps_dm_request         – raw Data Management API (power‑user)
  *   aps_list_hubs          – simplified hub listing
  *   aps_list_projects      – simplified project listing
@@ -30,7 +34,14 @@ import {
   ListToolsRequestSchema,
   CallToolRequestSchema,
 } from "@modelcontextprotocol/sdk/types.js";
-import { getApsToken, apsDmRequest, ApsApiError } from "./aps-auth.js";
+import {
+  getApsToken,
+  apsDmRequest,
+  ApsApiError,
+  performAps3loLogin,
+  getValid3loToken,
+  clear3loLogin,
+} from "./aps-auth.js";
 import {
   summarizeHubs,
   summarizeProjects,
@@ -63,6 +74,7 @@ import {
 const APS_CLIENT_ID = process.env.APS_CLIENT_ID ?? "";
 const APS_CLIENT_SECRET = process.env.APS_CLIENT_SECRET ?? "";
 const APS_SCOPE = process.env.APS_SCOPE ?? "";
+const APS_CALLBACK_PORT = parseInt(process.env.APS_CALLBACK_PORT ?? "8910", 10);
 
 function requireApsEnv(): void {
   if (!APS_CLIENT_ID || !APS_CLIENT_SECRET) {
@@ -72,9 +84,15 @@ function requireApsEnv(): void {
   }
 }
 
-/** Obtain a valid access token (cached automatically). */
+/**
+ * Obtain a valid access token.
+ * Prefers a cached 3‑legged token (user context) when available,
+ * otherwise falls back to 2‑legged (app context).
+ */
 async function token(): Promise<string> {
   requireApsEnv();
+  const three = await getValid3loToken(APS_CLIENT_ID, APS_CLIENT_SECRET);
+  if (three) return three;
   return getApsToken(APS_CLIENT_ID, APS_CLIENT_SECRET, APS_SCOPE || undefined);
 }
 
@@ -101,6 +119,37 @@ function richError(err: ApsApiError) {
 // ── Tool definitions ─────────────────────────────────────────────
 
 const TOOLS = [
+  // 0a ── aps_login (3‑legged OAuth)
+  {
+    name: "aps_login",
+    description:
+      "Start a 3‑legged OAuth login for APS (user context). " +
+      "Opens the user's browser to the Autodesk sign‑in page. " +
+      "After the user logs in and grants consent, the token is cached to disk " +
+      "and auto‑refreshed. All subsequent API calls use the 3LO token " +
+      "(with the user's own permissions) until aps_logout is called.",
+    inputSchema: {
+      type: "object" as const,
+      properties: {
+        scope: {
+          type: "string",
+          description:
+            "OAuth scope(s), space‑separated. " +
+            "Defaults to 'data:read data:write data:create account:read'.",
+        },
+      },
+    },
+  },
+
+  // 0b ── aps_logout (clear 3LO session)
+  {
+    name: "aps_logout",
+    description:
+      "Clear the cached 3‑legged OAuth token. " +
+      "After this, API calls fall back to the 2‑legged (app‑context) token.",
+    inputSchema: { type: "object" as const, properties: {} },
+  },
+
   // 1 ── aps_get_token
   {
     name: "aps_get_token",
@@ -737,6 +786,30 @@ async function handleTool(
   name: string,
   args: Record<string, unknown>,
 ) {
+  // ── aps_login (3LO) ─────────────────────────────────────────
+  if (name === "aps_login") {
+    requireApsEnv();
+    const scope =
+      (args.scope as string | undefined)?.trim() ||
+      APS_SCOPE ||
+      "data:read data:write data:create account:read";
+    const result = await performAps3loLogin(
+      APS_CLIENT_ID,
+      APS_CLIENT_SECRET,
+      scope,
+      APS_CALLBACK_PORT,
+    );
+    return ok(result.message);
+  }
+
+  // ── aps_logout (clear 3LO) ─────────────────────────────────
+  if (name === "aps_logout") {
+    clear3loLogin();
+    return ok(
+      "3-legged session cleared. API calls will now use the 2-legged (app) token.",
+    );
+  }
+
   // ── aps_get_token ────────────────────────────────────────────
   if (name === "aps_get_token") {
     const t = await token();
