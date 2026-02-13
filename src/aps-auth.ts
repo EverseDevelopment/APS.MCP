@@ -7,6 +7,16 @@
  * Supports all Data Management API endpoints per datamanagement.yaml.
  */
 
+/** Escape special characters for safe HTML embedding. */
+function escapeHtml(s: string): string {
+  return s
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
 import { createServer } from "node:http";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { exec } from "node:child_process";
@@ -262,9 +272,10 @@ export async function performAps3loLogin(
         const error = reqUrl.searchParams.get("error");
         if (error) {
           const desc = reqUrl.searchParams.get("error_description") ?? error;
+          const safeDesc = escapeHtml(desc);
           res.writeHead(400, { "Content-Type": "text/html" });
           res.end(
-            `<html><body><h2>Authorization failed</h2><p>${desc}</p></body></html>`,
+            `<html><body><h2>Authorization failed</h2><p>${safeDesc}</p></body></html>`,
           );
           server.close();
           reject(new Error(`APS authorization failed: ${desc}`));

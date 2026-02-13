@@ -1192,7 +1192,7 @@ async function handleTool(
     const t = await token();
 
     const query: Record<string, string> = {};
-    if (args.limit != null) query.limit = String(args.limit);
+    if (args.limit != null) query.limit = String(Math.min(Math.max(Number(args.limit) || 100, 1), 100));
     if (args.offset != null) query.offset = String(args.offset);
     if (args.sort_by) query.sortBy = args.sort_by as string;
 
