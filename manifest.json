@@ -2,7 +2,7 @@
   "manifest_version": "0.3",
   "name": "aps-mcp",
   "display_name": "Autodesk Platform Services (APS) MCP",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "MCP server for Autodesk Platform Services: get tokens, list hubs, and call APS APIs.",
   "author": {
     "name": "Pablo Derendinger",
@@ -20,11 +20,20 @@
       "env": {
         "APS_CLIENT_ID": "${user_config.aps_client_id}",
         "APS_CLIENT_SECRET": "${user_config.aps_client_secret}",
-        "APS_SCOPE": "${user_config.aps_scope}"
+        "APS_SCOPE": "${user_config.aps_scope}",
+        "APS_CALLBACK_PORT": "${user_config.aps_callback_port}"
       }
     }
   },
   "tools": [
+    {
+      "name": "aps_login",
+      "description": "Start 3-legged OAuth login (opens browser). Gives user-context access to APS."
+    },
+    {
+      "name": "aps_logout",
+      "description": "Clear 3-legged session. Falls back to 2-legged (app) token."
+    },
     {
       "name": "aps_get_token",
       "description": "Verify APS credentials and obtain a 2-legged access token."
@@ -60,6 +69,42 @@
     {
       "name": "aps_docs",
       "description": "APS Data Management quick-reference: ID formats, workflows, API paths, error troubleshooting."
+    },
+    {
+      "name": "aps_issues_request",
+      "description": "Raw ACC Issues API call (construction/issues/v1). Full JSON response. Power-user tool."
+    },
+    {
+      "name": "aps_issues_get_types",
+      "description": "Get issue categories and types (subtypes) for a project — compact summary with id, title, code."
+    },
+    {
+      "name": "aps_issues_list",
+      "description": "List/search issues with filtering by status, assignee, type, date, text. Compact summary per issue."
+    },
+    {
+      "name": "aps_issues_get",
+      "description": "Get detailed info for a single issue: title, status, assignee, dates, custom attributes, comments count."
+    },
+    {
+      "name": "aps_issues_create",
+      "description": "Create a new issue. Requires title, issueSubtypeId, status. Supports all optional fields."
+    },
+    {
+      "name": "aps_issues_update",
+      "description": "Update an existing issue. Only send the fields you want to change."
+    },
+    {
+      "name": "aps_issues_get_comments",
+      "description": "Get all comments for an issue — compact list with body, author, date."
+    },
+    {
+      "name": "aps_issues_create_comment",
+      "description": "Add a comment to an issue."
+    },
+    {
+      "name": "aps_issues_docs",
+      "description": "ACC Issues API quick-reference: project ID format, statuses, workflows, filters, error troubleshooting."
     },
     {
       "name": "aps_submittals_request",
@@ -128,6 +173,13 @@
       "title": "APS OAuth scope(s)",
       "description": "Space-separated scopes (e.g. data:read or data:read data:write). Default: data:read",
       "default": "data:read",
+      "required": false
+    },
+    "aps_callback_port": {
+      "type": "string",
+      "title": "3LO callback port",
+      "description": "Localhost port for the 3-legged OAuth callback. Default: 8910",
+      "default": "8910",
       "required": false
     }
   }

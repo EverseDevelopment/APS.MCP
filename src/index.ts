@@ -1,8 +1,12 @@
 /**
  * MCP server for Autodesk Platform Services (APS).
  *
- * Data Management Tools:
+ * Auth Tools:
+ *   aps_login              – 3‑legged OAuth login (opens browser)
+ *   aps_logout             – clear 3‑legged session
  *   aps_get_token          – verify credentials / obtain 2‑legged token
+ *
+ * Data Management Tools:
  *   aps_dm_request         – raw Data Management API (power‑user)
  *   aps_list_hubs          – simplified hub listing
  *   aps_list_projects      – simplified project listing
@@ -11,6 +15,17 @@
  *   aps_get_item_details   – single file / item metadata
  *   aps_get_folder_tree    – recursive folder tree
  *   aps_docs               – APS quick‑reference documentation
+ *
+ * Issues Tools:
+ *   aps_issues_request       – raw Issues API (power‑user)
+ *   aps_issues_get_types     – issue categories & types
+ *   aps_issues_list          – list / search issues (summarised)
+ *   aps_issues_get           – single issue detail
+ *   aps_issues_create        – create a new issue
+ *   aps_issues_update        – update an existing issue
+ *   aps_issues_get_comments  – list comments on an issue
+ *   aps_issues_create_comment – add a comment
+ *   aps_issues_docs          – Issues API quick‑reference
  *
  * Submittals Tools:
  *   aps_submittals_request          – raw Submittals API (power‑user)
@@ -28,7 +43,14 @@ import {
   ListToolsRequestSchema,
   CallToolRequestSchema,
 } from "@modelcontextprotocol/sdk/types.js";
-import { getApsToken, apsDmRequest, ApsApiError } from "./aps-auth.js";
+import {
+  getApsToken,
+  apsDmRequest,
+  ApsApiError,
+  performAps3loLogin,
+  getValid3loToken,
+  clear3loLogin,
+} from "./aps-auth.js";
 import {
   summarizeHubs,
   summarizeProjects,
@@ -43,7 +65,19 @@ import {
   validateFolderId,
   validateItemId,
   APS_DOCS,
-  // ── Submittals ──
+} from "./aps-dm-helpers.js";
+import {
+  toIssuesProjectId,
+  summarizeIssuesList,
+  summarizeIssueDetail,
+  summarizeIssueTypes,
+  summarizeComments,
+  validateIssuesProjectId,
+  validateIssueId,
+  validateIssuesPath,
+  ISSUES_DOCS,
+} from "./aps-issues-helpers.js";
+import {
   summarizeSubmittalItems,
   summarizeSubmittalPackages,
   summarizeSubmittalSpecs,
@@ -53,13 +87,14 @@ import {
   validateSubmittalItemId,
   validateSubmittalPath,
   SUBMITTALS_DOCS,
-} from "./aps-helpers.js";
+} from "./aps-submittals-helpers.js";
 
 // ── Environment ──────────────────────────────────────────────────
 
 const APS_CLIENT_ID = process.env.APS_CLIENT_ID ?? "";
 const APS_CLIENT_SECRET = process.env.APS_CLIENT_SECRET ?? "";
 const APS_SCOPE = process.env.APS_SCOPE ?? "";
+const APS_CALLBACK_PORT = parseInt(process.env.APS_CALLBACK_PORT ?? "8910", 10);
 
 function requireApsEnv(): void {
   if (!APS_CLIENT_ID || !APS_CLIENT_SECRET) {
@@ -69,9 +104,15 @@ function requireApsEnv(): void {
   }
 }
 
-/** Obtain a valid access token (cached automatically). */
+/**
+ * Obtain a valid access token.
+ * Prefers a cached 3‑legged token (user context) when available,
+ * otherwise falls back to 2‑legged (app context).
+ */
 async function token(): Promise<string> {
   requireApsEnv();
+  const three = await getValid3loToken(APS_CLIENT_ID, APS_CLIENT_SECRET);
+  if (three) return three;
   return getApsToken(APS_CLIENT_ID, APS_CLIENT_SECRET, APS_SCOPE || undefined);
 }
 
@@ -98,6 +139,37 @@ function richError(err: ApsApiError) {
 // ── Tool definitions ─────────────────────────────────────────────
 
 const TOOLS = [
+  // 0a ── aps_login (3‑legged OAuth)
+  {
+    name: "aps_login",
+    description:
+      "Start a 3‑legged OAuth login for APS (user context). " +
+      "Opens the user's browser to the Autodesk sign‑in page. " +
+      "After the user logs in and grants consent, the token is cached to disk " +
+      "and auto‑refreshed. All subsequent API calls use the 3LO token " +
+      "(with the user's own permissions) until aps_logout is called.",
+    inputSchema: {
+      type: "object" as const,
+      properties: {
+        scope: {
+          type: "string",
+          description:
+            "OAuth scope(s), space‑separated. " +
+            "Defaults to 'data:read data:write data:create account:read'.",
+        },
+      },
+    },
+  },
+
+  // 0b ── aps_logout (clear 3LO session)
+  {
+    name: "aps_logout",
+    description:
+      "Clear the cached 3‑legged OAuth token. " +
+      "After this, API calls fall back to the 2‑legged (app‑context) token.",
+    inputSchema: { type: "object" as const, properties: {} },
+  },
+
   // 1 ── aps_get_token
   {
     name: "aps_get_token",
@@ -305,10 +377,433 @@ const TOOLS = [
   },
 
   // ═══════════════════════════════════════════════════════════════
+  // ACC Issues Tools
+  // ═══════════════════════════════════════════════════════════════
+
+  // 10 ── aps_issues_request (raw / power‑user)
+  {
+    name: "aps_issues_request",
+    description:
+      "Call any ACC Issues API endpoint (construction/issues/v1). " +
+      "This is the raw / power‑user tool – it returns the full API response. " +
+      "Prefer the simplified tools (aps_issues_list, aps_issues_get, etc.) for everyday use. " +
+      "Use this when you need full control: custom filters, attribute definitions, attribute mappings, " +
+      "or endpoints not covered by simplified tools.\n\n" +
+      "⚠️ Project IDs for the Issues API must NOT have the 'b.' prefix. " +
+      "If you have a Data Management project ID like 'b.abc123', use 'abc123'.",
+    inputSchema: {
+      type: "object" as const,
+      properties: {
+        method: {
+          type: "string",
+          enum: ["GET", "POST", "PATCH", "DELETE"],
+          description: "HTTP method.",
+        },
+        path: {
+          type: "string",
+          description:
+            "API path relative to developer.api.autodesk.com " +
+            "(e.g. 'construction/issues/v1/projects/{projectId}/issues'). " +
+            "Must include the version prefix (construction/issues/v1).",
+        },
+        query: {
+          type: "object",
+          description:
+            "Optional query parameters as key/value pairs " +
+            "(e.g. { \"filter[status]\": \"open\", \"limit\": \"50\" }).",
+          additionalProperties: { type: "string" },
+        },
+        body: {
+          type: "object",
+          description: "Optional JSON body for POST/PATCH requests.",
+        },
+        region: {
+          type: "string",
+          enum: ["US", "EMEA", "AUS", "CAN", "DEU", "IND", "JPN", "GBR"],
+          description: "Data centre region (x-ads-region header). Defaults to US.",
+        },
+      },
+      required: ["method", "path"],
+    },
+  },
+
+  // 11 ── aps_issues_get_types
+  {
+    name: "aps_issues_get_types",
+    description:
+      "Get issue categories (types) and their types (subtypes) for a project. " +
+      "Returns a compact summary: category id, title, active status, and subtypes with code. " +
+      "Use the returned subtype id when creating issues (issueSubtypeId).",
+    inputSchema: {
+      type: "object" as const,
+      properties: {
+        project_id: {
+          type: "string",
+          description:
+            "Project ID – accepts with or without 'b.' prefix (e.g. 'b.abc123' or 'abc123'). " +
+            "Get this from aps_list_projects.",
+        },
+        include_subtypes: {
+          type: "boolean",
+          description: "Include subtypes for each category. Defaults to true.",
+        },
+        region: {
+          type: "string",
+          enum: ["US", "EMEA", "AUS", "CAN", "DEU", "IND", "JPN", "GBR"],
+          description: "Data centre region. Defaults to US.",
+        },
+      },
+      required: ["project_id"],
+    },
+  },
+
+  // 12 ── aps_issues_list
+  {
+    name: "aps_issues_list",
+    description:
+      "List and search issues in a project with optional filtering. " +
+      "Returns a compact summary per issue: id, displayId, title, status, assignee, dates, comment count. " +
+      "Supports filtering by status, assignee, type, date, search text, and more. " +
+      "This is much smaller than the raw API response.",
+    inputSchema: {
+      type: "object" as const,
+      properties: {
+        project_id: {
+          type: "string",
+          description: "Project ID – accepts with or without 'b.' prefix.",
+        },
+        filter_status: {
+          type: "string",
+          description:
+            "Filter by status. Comma‑separated. " +
+            "Values: draft, open, pending, in_progress, in_review, completed, not_approved, in_dispute, closed.",
+        },
+        filter_assigned_to: {
+          type: "string",
+          description: "Filter by assignee Autodesk ID. Comma‑separated for multiple.",
+        },
+        filter_issue_type_id: {
+          type: "string",
+          description: "Filter by category (type) UUID. Comma‑separated for multiple.",
+        },
+        filter_issue_subtype_id: {
+          type: "string",
+          description: "Filter by type (subtype) UUID. Comma‑separated for multiple.",
+        },
+        filter_due_date: {
+          type: "string",
+          description: "Filter by due date (YYYY‑MM‑DD). Comma‑separated for range.",
+        },
+        filter_created_at: {
+          type: "string",
+          description: "Filter by creation date (YYYY‑MM‑DD or YYYY‑MM‑DDThh:mm:ss.sz).",
+        },
+        filter_search: {
+          type: "string",
+          description: "Search by title or display ID (e.g. '300' or 'wall crack').",
+        },
+        filter_root_cause_id: {
+          type: "string",
+          description: "Filter by root cause UUID. Comma‑separated for multiple.",
+        },
+        filter_location_id: {
+          type: "string",
+          description: "Filter by LBS location UUID. Comma‑separated for multiple.",
+        },
+        limit: {
+          type: "number",
+          description: "Max issues to return (1‑100). Default 100.",
+        },
+        offset: {
+          type: "number",
+          description: "Pagination offset. Default 0.",
+        },
+        sort_by: {
+          type: "string",
+          description:
+            "Sort field(s). Comma‑separated. Prefix with '-' for descending. " +
+            "Values: createdAt, updatedAt, displayId, title, status, assignedTo, dueDate, startDate, closedAt.",
+        },
+        region: {
+          type: "string",
+          enum: ["US", "EMEA", "AUS", "CAN", "DEU", "IND", "JPN", "GBR"],
+          description: "Data centre region. Defaults to US.",
+        },
+      },
+      required: ["project_id"],
+    },
+  },
+
+  // 13 ── aps_issues_get
+  {
+    name: "aps_issues_get",
+    description:
+      "Get detailed information about a single issue. " +
+      "Returns a compact summary with: id, title, description, status, assignee, dates, location, " +
+      "custom attributes, linked document count, permitted statuses, and more.",
+    inputSchema: {
+      type: "object" as const,
+      properties: {
+        project_id: {
+          type: "string",
+          description: "Project ID – accepts with or without 'b.' prefix.",
+        },
+        issue_id: {
+          type: "string",
+          description: "Issue UUID. Get this from aps_issues_list.",
+        },
+        region: {
+          type: "string",
+          enum: ["US", "EMEA", "AUS", "CAN", "DEU", "IND", "JPN", "GBR"],
+          description: "Data centre region. Defaults to US.",
+        },
+      },
+      required: ["project_id", "issue_id"],
+    },
+  },
+
+  // 14 ── aps_issues_create
+  {
+    name: "aps_issues_create",
+    description:
+      "Create a new issue in a project. " +
+      "Requires: title, issueSubtypeId (get from aps_issues_get_types), and status. " +
+      "Optional: description, assignee, dates, location, root cause, custom attributes, watchers. " +
+      "⚠️ Requires 'data:write' in APS_SCOPE.",
+    inputSchema: {
+      type: "object" as const,
+      properties: {
+        project_id: {
+          type: "string",
+          description: "Project ID – accepts with or without 'b.' prefix.",
+        },
+        title: {
+          type: "string",
+          description: "Issue title (max 10,000 chars).",
+        },
+        issue_subtype_id: {
+          type: "string",
+          description: "Type (subtype) UUID – get from aps_issues_get_types.",
+        },
+        status: {
+          type: "string",
+          enum: ["draft", "open", "pending", "in_progress", "in_review", "completed", "not_approved", "in_dispute", "closed"],
+          description: "Initial status (e.g. 'open').",
+        },
+        description: {
+          type: "string",
+          description: "Issue description (max 10,000 chars). Optional.",
+        },
+        assigned_to: {
+          type: "string",
+          description: "Autodesk ID of assignee (user, company, or role). Optional.",
+        },
+        assigned_to_type: {
+          type: "string",
+          enum: ["user", "company", "role"],
+          description: "Type of assignee. Required if assigned_to is set.",
+        },
+        due_date: {
+          type: "string",
+          description: "Due date in ISO8601 format (e.g. '2025‑12‑31'). Optional.",
+        },
+        start_date: {
+          type: "string",
+          description: "Start date in ISO8601 format. Optional.",
+        },
+        location_id: {
+          type: "string",
+          description: "LBS (Location Breakdown Structure) UUID. Optional.",
+        },
+        location_details: {
+          type: "string",
+          description: "Location as plain text (max 8,300 chars). Optional.",
+        },
+        root_cause_id: {
+          type: "string",
+          description: "Root cause UUID. Optional.",
+        },
+        published: {
+          type: "boolean",
+          description: "Whether the issue is published. Default false.",
+        },
+        watchers: {
+          type: "array",
+          items: { type: "string" },
+          description: "Array of Autodesk IDs to add as watchers. Optional.",
+        },
+        custom_attributes: {
+          type: "array",
+          items: {
+            type: "object",
+            properties: {
+              attributeDefinitionId: { type: "string" },
+              value: {},
+            },
+            required: ["attributeDefinitionId", "value"],
+          },
+          description: "Custom attribute values. Optional.",
+        },
+        region: {
+          type: "string",
+          enum: ["US", "EMEA", "AUS", "CAN", "DEU", "IND", "JPN", "GBR"],
+          description: "Data centre region. Defaults to US.",
+        },
+      },
+      required: ["project_id", "title", "issue_subtype_id", "status"],
+    },
+  },
+
+  // 15 ── aps_issues_update
+  {
+    name: "aps_issues_update",
+    description:
+      "Update an existing issue. Only include the fields you want to change. " +
+      "⚠️ Requires 'data:write' in APS_SCOPE. " +
+      "To see which fields the current user can update, check permittedAttributes in the issue detail.",
+    inputSchema: {
+      type: "object" as const,
+      properties: {
+        project_id: {
+          type: "string",
+          description: "Project ID – accepts with or without 'b.' prefix.",
+        },
+        issue_id: {
+          type: "string",
+          description: "Issue UUID to update.",
+        },
+        title: { type: "string", description: "New title. Optional." },
+        description: { type: "string", description: "New description. Optional." },
+        status: {
+          type: "string",
+          enum: ["draft", "open", "pending", "in_progress", "in_review", "completed", "not_approved", "in_dispute", "closed"],
+          description: "New status. Optional.",
+        },
+        assigned_to: { type: "string", description: "New assignee Autodesk ID. Optional." },
+        assigned_to_type: {
+          type: "string",
+          enum: ["user", "company", "role"],
+          description: "Assignee type. Required if assigned_to is set.",
+        },
+        due_date: { type: "string", description: "New due date (ISO8601). Optional." },
+        start_date: { type: "string", description: "New start date (ISO8601). Optional." },
+        location_id: { type: "string", description: "New LBS location UUID. Optional." },
+        location_details: { type: "string", description: "New location text. Optional." },
+        root_cause_id: { type: "string", description: "New root cause UUID. Optional." },
+        published: { type: "boolean", description: "Set published state. Optional." },
+        watchers: {
+          type: "array",
+          items: { type: "string" },
+          description: "New watcher list. Optional.",
+        },
+        custom_attributes: {
+          type: "array",
+          items: {
+            type: "object",
+            properties: {
+              attributeDefinitionId: { type: "string" },
+              value: {},
+            },
+            required: ["attributeDefinitionId", "value"],
+          },
+          description: "Custom attribute values to update. Optional.",
+        },
+        region: {
+          type: "string",
+          enum: ["US", "EMEA", "AUS", "CAN", "DEU", "IND", "JPN", "GBR"],
+          description: "Data centre region. Defaults to US.",
+        },
+      },
+      required: ["project_id", "issue_id"],
+    },
+  },
+
+  // 16 ── aps_issues_get_comments
+  {
+    name: "aps_issues_get_comments",
+    description:
+      "Get all comments for a specific issue. " +
+      "Returns a compact list: comment id, body, author, date.",
+    inputSchema: {
+      type: "object" as const,
+      properties: {
+        project_id: {
+          type: "string",
+          description: "Project ID – accepts with or without 'b.' prefix.",
+        },
+        issue_id: {
+          type: "string",
+          description: "Issue UUID.",
+        },
+        limit: {
+          type: "number",
+          description: "Max comments to return. Optional.",
+        },
+        offset: {
+          type: "number",
+          description: "Pagination offset. Optional.",
+        },
+        sort_by: {
+          type: "string",
+          description: "Sort field (e.g. 'createdAt' or '-createdAt'). Optional.",
+        },
+        region: {
+          type: "string",
+          enum: ["US", "EMEA", "AUS", "CAN", "DEU", "IND", "JPN", "GBR"],
+          description: "Data centre region. Defaults to US.",
+        },
+      },
+      required: ["project_id", "issue_id"],
+    },
+  },
+
+  // 17 ── aps_issues_create_comment
+  {
+    name: "aps_issues_create_comment",
+    description:
+      "Add a comment to an issue. " +
+      "⚠️ Requires 'data:write' in APS_SCOPE.",
+    inputSchema: {
+      type: "object" as const,
+      properties: {
+        project_id: {
+          type: "string",
+          description: "Project ID – accepts with or without 'b.' prefix.",
+        },
+        issue_id: {
+          type: "string",
+          description: "Issue UUID.",
+        },
+        body: {
+          type: "string",
+          description: "Comment text (max 10,000 chars). Use \\n for newlines.",
+        },
+        region: {
+          type: "string",
+          enum: ["US", "EMEA", "AUS", "CAN", "DEU", "IND", "JPN", "GBR"],
+          description: "Data centre region. Defaults to US.",
+        },
+      },
+      required: ["project_id", "issue_id", "body"],
+    },
+  },
+
+  // 18 ── aps_issues_docs
+  {
+    name: "aps_issues_docs",
+    description:
+      "Return ACC Issues API quick‑reference documentation: " +
+      "project ID format, statuses, typical workflow, raw API paths, " +
+      "common filters, sort options, and error troubleshooting. " +
+      "Call this before your first Issues interaction.",
+    inputSchema: { type: "object" as const, properties: {} },
+  },
+
+  // ═══════════════════════════════════════════════════════════════
   // ── ACC Submittals tools ───────────────────────────────────────
   // ═══════════════════════════════════════════════════════════════
 
-  // 10 ── aps_submittals_request (raw / power‑user)
+  // 19 ── aps_submittals_request (raw / power‑user)
   {
     name: "aps_submittals_request",
     description:
@@ -354,7 +849,7 @@ const TOOLS = [
     },
   },
 
-  // 11 ── aps_list_submittal_items
+  // 20 ── aps_list_submittal_items
   {
     name: "aps_list_submittal_items",
     description:
@@ -395,7 +890,7 @@ const TOOLS = [
     },
   },
 
-  // 12 ── aps_get_submittal_item
+  // 21 ── aps_get_submittal_item
   {
     name: "aps_get_submittal_item",
     description:
@@ -417,7 +912,7 @@ const TOOLS = [
     },
   },
 
-  // 13 ── aps_list_submittal_packages
+  // 22 ── aps_list_submittal_packages
   {
     name: "aps_list_submittal_packages",
     description:
@@ -443,7 +938,7 @@ const TOOLS = [
     },
   },
 
-  // 14 ── aps_list_submittal_specs
+  // 23 ── aps_list_submittal_specs
   {
     name: "aps_list_submittal_specs",
     description:
@@ -470,7 +965,7 @@ const TOOLS = [
     },
   },
 
-  // 15 ── aps_get_submittal_item_attachments
+  // 24 ── aps_get_submittal_item_attachments
   {
     name: "aps_get_submittal_item_attachments",
     description:
@@ -493,7 +988,7 @@ const TOOLS = [
     },
   },
 
-  // 16 ── aps_submittals_docs
+  // 25 ── aps_submittals_docs
   {
     name: "aps_submittals_docs",
     description:
@@ -510,6 +1005,30 @@ async function handleTool(
   name: string,
   args: Record<string, unknown>,
 ) {
+  // ── aps_login (3LO) ─────────────────────────────────────────
+  if (name === "aps_login") {
+    requireApsEnv();
+    const scope =
+      (args.scope as string | undefined)?.trim() ||
+      APS_SCOPE ||
+      "data:read data:write data:create account:read";
+    const result = await performAps3loLogin(
+      APS_CLIENT_ID,
+      APS_CLIENT_SECRET,
+      scope,
+      APS_CALLBACK_PORT,
+    );
+    return ok(result.message);
+  }
+
+  // ── aps_logout (clear 3LO) ─────────────────────────────────
+  if (name === "aps_logout") {
+    clear3loLogin();
+    return ok(
+      "3-legged session cleared. API calls will now use the 2-legged (app) token.",
+    );
+  }
+
   // ── aps_get_token ────────────────────────────────────────────
   if (name === "aps_get_token") {
     const t = await token();
@@ -658,6 +1177,281 @@ async function handleTool(
   // ── aps_docs ─────────────────────────────────────────────────
   if (name === "aps_docs") {
     return ok(APS_DOCS);
+  }
+
+  // ═══════════════════════════════════════════════════════════════
+  // ACC Issues Tool Handlers
+  // ═══════════════════════════════════════════════════════════════
+
+  /** Build optional headers for Issues API calls. */
+  function issuesHeaders(region?: string): Record<string, string> {
+    const h: Record<string, string> = {};
+    if (region) h["x-ads-region"] = region;
+    return h;
+  }
+
+  /** Build headers for Issues API write operations (POST/PATCH). */
+  function issuesWriteHeaders(region?: string): Record<string, string> {
+    return { "Content-Type": "application/json", ...issuesHeaders(region) };
+  }
+
+  // ── aps_issues_request ──────────────────────────────────────
+  if (name === "aps_issues_request") {
+    const method = (args.method as string) ?? "GET";
+    const path = args.path as string;
+    const pathErr = validateIssuesPath(path);
+    if (pathErr) return fail(pathErr);
+
+    const query = args.query as Record<string, string> | undefined;
+    const body = args.body as Record<string, unknown> | undefined;
+    const region = args.region as string | undefined;
+    const t = await token();
+
+    const headers: Record<string, string> = {
+      ...issuesHeaders(region),
+    };
+    if ((method === "POST" || method === "PATCH") && body !== undefined) {
+      headers["Content-Type"] = "application/json";
+    }
+
+    const data = await apsDmRequest(
+      method as "GET" | "POST" | "PATCH" | "DELETE",
+      path,
+      t,
+      { query, body, headers },
+    );
+    return json(data);
+  }
+
+  // ── aps_issues_get_types ────────────────────────────────────
+  if (name === "aps_issues_get_types") {
+    const projectId = args.project_id as string;
+    const err = validateIssuesProjectId(projectId);
+    if (err) return fail(err);
+
+    const pid = toIssuesProjectId(projectId);
+    const includeSubtypes = (args.include_subtypes as boolean) !== false;
+    const region = args.region as string | undefined;
+    const t = await token();
+
+    const query: Record<string, string> = {};
+    if (includeSubtypes) query.include = "subtypes";
+
+    const raw = await apsDmRequest(
+      "GET",
+      `construction/issues/v1/projects/${pid}/issue-types`,
+      t,
+      { query, headers: issuesHeaders(region) },
+    );
+    return json(summarizeIssueTypes(raw));
+  }
+
+  // ── aps_issues_list ─────────────────────────────────────────
+  if (name === "aps_issues_list") {
+    const projectId = args.project_id as string;
+    const err = validateIssuesProjectId(projectId);
+    if (err) return fail(err);
+
+    const pid = toIssuesProjectId(projectId);
+    const region = args.region as string | undefined;
+    const t = await token();
+
+    const query: Record<string, string> = {};
+    if (args.filter_status) query["filter[status]"] = args.filter_status as string;
+    if (args.filter_assigned_to) query["filter[assignedTo]"] = args.filter_assigned_to as string;
+    if (args.filter_issue_type_id) query["filter[issueTypeId]"] = args.filter_issue_type_id as string;
+    if (args.filter_issue_subtype_id) query["filter[issueSubtypeId]"] = args.filter_issue_subtype_id as string;
+    if (args.filter_due_date) query["filter[dueDate]"] = args.filter_due_date as string;
+    if (args.filter_created_at) query["filter[createdAt]"] = args.filter_created_at as string;
+    if (args.filter_search) query["filter[search]"] = args.filter_search as string;
+    if (args.filter_root_cause_id) query["filter[rootCauseId]"] = args.filter_root_cause_id as string;
+    if (args.filter_location_id) query["filter[locationId]"] = args.filter_location_id as string;
+    if (args.limit != null) query.limit = String(Math.min(Math.max(Number(args.limit) || 100, 1), 100));
+    if (args.offset != null) query.offset = String(Number(args.offset) || 0);
+    if (args.sort_by) query.sortBy = args.sort_by as string;
+
+    const raw = await apsDmRequest(
+      "GET",
+      `construction/issues/v1/projects/${pid}/issues`,
+      t,
+      { query, headers: issuesHeaders(region) },
+    );
+    return json(summarizeIssuesList(raw));
+  }
+
+  // ── aps_issues_get ──────────────────────────────────────────
+  if (name === "aps_issues_get") {
+    const projectId = args.project_id as string;
+    const issueId = args.issue_id as string;
+    const e1 = validateIssuesProjectId(projectId);
+    if (e1) return fail(e1);
+    const e2 = validateIssueId(issueId);
+    if (e2) return fail(e2);
+
+    const pid = toIssuesProjectId(projectId);
+    const region = args.region as string | undefined;
+    const t = await token();
+
+    const raw = await apsDmRequest(
+      "GET",
+      `construction/issues/v1/projects/${pid}/issues/${issueId}`,
+      t,
+      { headers: issuesHeaders(region) },
+    );
+    return json(summarizeIssueDetail(raw));
+  }
+
+  // ── aps_issues_create ───────────────────────────────────────
+  if (name === "aps_issues_create") {
+    const projectId = args.project_id as string;
+    const err = validateIssuesProjectId(projectId);
+    if (err) return fail(err);
+
+    const title = args.title as string;
+    if (!title) return fail("title is required.");
+    const issueSubtypeId = args.issue_subtype_id as string;
+    if (!issueSubtypeId) return fail("issue_subtype_id is required.");
+    const status = args.status as string;
+    if (!status) return fail("status is required.");
+
+    const pid = toIssuesProjectId(projectId);
+    const region = args.region as string | undefined;
+    const t = await token();
+
+    const body: Record<string, unknown> = {
+      title,
+      issueSubtypeId,
+      status,
+    };
+    if (args.description != null) body.description = args.description;
+    if (args.assigned_to && !args.assigned_to_type)
+      return fail("assigned_to_type is required when assigned_to is provided.");
+    if (args.assigned_to != null && args.assigned_to_type != null) {
+      body.assignedTo = args.assigned_to;
+      body.assignedToType = args.assigned_to_type;
+    } else if (args.assigned_to_type != null) {
+      body.assignedToType = args.assigned_to_type;
+    }
+    if (args.due_date != null) body.dueDate = args.due_date;
+    if (args.start_date != null) body.startDate = args.start_date;
+    if (args.location_id != null) body.locationId = args.location_id;
+    if (args.location_details != null) body.locationDetails = args.location_details;
+    if (args.root_cause_id != null) body.rootCauseId = args.root_cause_id;
+    if (args.published != null) body.published = args.published;
+    if (args.watchers != null) body.watchers = args.watchers;
+    if (args.custom_attributes != null) body.customAttributes = args.custom_attributes;
+
+    const raw = await apsDmRequest(
+      "POST",
+      `construction/issues/v1/projects/${pid}/issues`,
+      t,
+      { body, headers: issuesWriteHeaders(region) },
+    );
+    return json(summarizeIssueDetail(raw));
+  }
+
+  // ── aps_issues_update ───────────────────────────────────────
+  if (name === "aps_issues_update") {
+    const projectId = args.project_id as string;
+    const issueId = args.issue_id as string;
+    const e1 = validateIssuesProjectId(projectId);
+    if (e1) return fail(e1);
+    const e2 = validateIssueId(issueId);
+    if (e2) return fail(e2);
+
+    const pid = toIssuesProjectId(projectId);
+    const region = args.region as string | undefined;
+    const t = await token();
+
+    const body: Record<string, unknown> = {};
+    if (args.title != null) body.title = args.title;
+    if (args.description != null) body.description = args.description;
+    if (args.status != null) body.status = args.status;
+    if (args.assigned_to && !args.assigned_to_type)
+      return fail("assigned_to_type is required when assigned_to is provided.");
+    if (args.assigned_to != null && args.assigned_to_type != null) {
+      body.assignedTo = args.assigned_to;
+      body.assignedToType = args.assigned_to_type;
+    } else if (args.assigned_to_type != null) {
+      body.assignedToType = args.assigned_to_type;
+    }
+    if (args.due_date != null) body.dueDate = args.due_date;
+    if (args.start_date != null) body.startDate = args.start_date;
+    if (args.location_id != null) body.locationId = args.location_id;
+    if (args.location_details != null) body.locationDetails = args.location_details;
+    if (args.root_cause_id != null) body.rootCauseId = args.root_cause_id;
+    if (args.published != null) body.published = args.published;
+    if (args.watchers != null) body.watchers = args.watchers;
+    if (args.custom_attributes != null) body.customAttributes = args.custom_attributes;
+
+    if (Object.keys(body).length === 0) {
+      return fail("No fields to update. Provide at least one field to change.");
+    }
+
+    const raw = await apsDmRequest(
+      "PATCH",
+      `construction/issues/v1/projects/${pid}/issues/${issueId}`,
+      t,
+      { body, headers: issuesWriteHeaders(region) },
+    );
+    return json(summarizeIssueDetail(raw));
+  }
+
+  // ── aps_issues_get_comments ─────────────────────────────────
+  if (name === "aps_issues_get_comments") {
+    const projectId = args.project_id as string;
+    const issueId = args.issue_id as string;
+    const e1 = validateIssuesProjectId(projectId);
+    if (e1) return fail(e1);
+    const e2 = validateIssueId(issueId);
+    if (e2) return fail(e2);
+
+    const pid = toIssuesProjectId(projectId);
+    const region = args.region as string | undefined;
+    const t = await token();
+
+    const query: Record<string, string> = {};
+    if (args.limit != null) query.limit = String(Math.min(Math.max(Number(args.limit) || 100, 1), 100));
+    if (args.offset != null) query.offset = String(args.offset);
+    if (args.sort_by) query.sortBy = args.sort_by as string;
+
+    const raw = await apsDmRequest(
+      "GET",
+      `construction/issues/v1/projects/${pid}/issues/${issueId}/comments`,
+      t,
+      { query, headers: issuesHeaders(region) },
+    );
+    return json(summarizeComments(raw));
+  }
+
+  // ── aps_issues_create_comment ───────────────────────────────
+  if (name === "aps_issues_create_comment") {
+    const projectId = args.project_id as string;
+    const issueId = args.issue_id as string;
+    const e1 = validateIssuesProjectId(projectId);
+    if (e1) return fail(e1);
+    const e2 = validateIssueId(issueId);
+    if (e2) return fail(e2);
+
+    const body = args.body as string;
+    if (!body) return fail("body is required.");
+
+    const pid = toIssuesProjectId(projectId);
+    const region = args.region as string | undefined;
+    const t = await token();
+
+    const raw = await apsDmRequest(
+      "POST",
+      `construction/issues/v1/projects/${pid}/issues/${issueId}/comments`,
+      t,
+      { body: { body }, headers: issuesWriteHeaders(region) },
+    );
+    return json(raw);
+  }
+
+  // ── aps_issues_docs ─────────────────────────────────────────
+  if (name === "aps_issues_docs") {
+    return ok(ISSUES_DOCS);
   }
 
   // ═══════════════════════════════════════════════════════════════
