@@ -1506,11 +1506,12 @@ async function handleTool(
   // ── aps_get_submittal_item ──────────────────────────────────
   if (name === "aps_get_submittal_item") {
     const projectId = args.project_id as string;
-    const itemId = args.item_id as string;
+    const rawItemId = args.item_id as string;
     const e1 = validateSubmittalProjectId(projectId);
     if (e1) return fail(e1);
-    const e2 = validateSubmittalItemId(itemId);
+    const e2 = validateSubmittalItemId(rawItemId);
     if (e2) return fail(e2);
+    const itemId = encodeURIComponent(rawItemId);
 
     const t = await token();
     const raw = await apsDmRequest("GET", submittalPath(projectId, `items/${itemId}`), t, {
@@ -1560,11 +1561,12 @@ async function handleTool(
   // ── aps_get_submittal_item_attachments ──────────────────────
   if (name === "aps_get_submittal_item_attachments") {
     const projectId = args.project_id as string;
-    const itemId = args.item_id as string;
+    const rawItemId = args.item_id as string;
     const e1 = validateSubmittalProjectId(projectId);
     if (e1) return fail(e1);
-    const e2 = validateSubmittalItemId(itemId);
+    const e2 = validateSubmittalItemId(rawItemId);
     if (e2) return fail(e2);
+    const itemId = encodeURIComponent(rawItemId);
 
     const t = await token();
     const raw = await apsDmRequest(

@@ -707,14 +707,34 @@ export function summarizeSubmittalAttachments(raw: unknown): {
 
 // ── Submittal‑specific validation ────────────────────────────────
 
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+function containsTraversalTokens(value: string): boolean {
+  return (
+    value.includes("/") ||
+    value.includes("\\") ||
+    value.toLowerCase().includes("%2f") ||
+    value.includes("..")
+  );
+}
+
 export function validateSubmittalProjectId(id: string): string | null {
   if (!id) return "project_id is required.";
-  // Accept both 'b.uuid' (DM format) and plain UUID (ACC format)
+  if (containsTraversalTokens(id))
+    return "project_id contains disallowed characters ('/', '\\', '%2F', or '..').";
+  // Accept 'b.<uuid>' (DM format) or plain UUID (ACC format)
+  const bare = id.startsWith("b.") ? id.slice(2) : id;
+  if (!UUID_RE.test(bare))
+    return "project_id must be a UUID (xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx) optionally prefixed with 'b.'.";
   return null;
 }
 
 export function validateSubmittalItemId(id: string): string | null {
   if (!id) return "item_id is required.";
+  if (containsTraversalTokens(id))
+    return "item_id contains disallowed characters ('/', '\\', '%2F', or '..').";
+  if (!UUID_RE.test(id))
+    return "item_id must be a UUID (xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx).";
   return null;
 }
 
