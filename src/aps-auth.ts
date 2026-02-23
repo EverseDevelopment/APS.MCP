@@ -231,8 +231,9 @@ function openBrowser(url: string): void {
   let args: string[];
 
   if (process.platform === "win32") {
-    program = "cmd";
-    args = ["/c", "start", "", url];
+    // Use PowerShell to avoid cmd.exe treating '&' in the URL as a command separator.
+    program = "powershell";
+    args = ["-NoProfile", "-NonInteractive", "-Command", `Start-Process '${url}'`];
   } else if (process.platform === "darwin") {
     program = "open";
     args = [url];
