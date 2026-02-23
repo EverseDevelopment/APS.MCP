@@ -116,6 +116,8 @@ This project can be packed as an [MCP Bundle](https://github.com/modelcontextpro
 
    Open `acc-mcp.mcpb` in Claude for macOS or Windows (or any app that supports MCPB). You’ll be prompted for **APS Client ID** and **APS Client Secret**; the app will pass them to the server as environment variables.
 
+   > For a step-by-step walkthrough with screenshots, see [docs/claude-desktop-installation.md](docs/claude-desktop-installation.md).
+
 The `manifest.json` at the repo root follows the [MCPB manifest spec](https://github.com/modelcontextprotocol/mcpb/blob/main/MANIFEST.md) (manifest_version 0.3, Node server, `user_config` for credentials).
 
 ## License
