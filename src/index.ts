@@ -147,17 +147,11 @@ const TOOLS = [
       "Opens the user's browser to the Autodesk sign‑in page. " +
       "After the user logs in and grants consent, the token is cached to disk " +
       "and auto‑refreshed. All subsequent API calls use the 3LO token " +
-      "(with the user's own permissions) until aps_logout is called.",
+      "(with the user's own permissions) until aps_logout is called. " +
+      "The OAuth scope is determined by the APS_SCOPE setting configured by the user.",
     inputSchema: {
       type: "object" as const,
-      properties: {
-        scope: {
-          type: "string",
-          description:
-            "OAuth scope(s), space‑separated. " +
-            "Defaults to 'data:read data:write data:create account:read'.",
-        },
-      },
+      properties: {},
     },
   },
 
@@ -1008,10 +1002,7 @@ async function handleTool(
   // ── aps_login (3LO) ─────────────────────────────────────────
   if (name === "aps_login") {
     requireApsEnv();
-    const scope =
-      (args.scope as string | undefined)?.trim() ||
-      APS_SCOPE ||
-      "data:read data:write data:create account:read";
+    const scope = APS_SCOPE || "data:read";
     const result = await performAps3loLogin(
       APS_CLIENT_ID,
       APS_CLIENT_SECRET,
