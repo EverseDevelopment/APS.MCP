@@ -2,7 +2,7 @@
   "manifest_version": "0.3",
   "name": "aps-mcp",
   "display_name": "Autodesk Platform Services (APS) MCP",
-  "version": "1.2.0",
+  "version": "1.2.1",
   "description": "MCP server for Autodesk Platform Services: get tokens, list hubs, and call APS APIs.",
   "author": {
     "name": "Pablo Derendinger",
